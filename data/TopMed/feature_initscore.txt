@@ -1,0 +1,4 @@
+feature	init_score
+omim	10
+exome	8
+coloc	5

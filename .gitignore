@@ -1,0 +1,4 @@
+# large data files
+# will need to provide snakemake rules to regenerate
+data/Ensembl/*
+data/Protein/*

@@ -1,0 +1,23 @@
+Building DAG of jobs...
+Using shell: /bin/bash
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Job stats:
+job           count    min threads    max threads
+----------  -------  -------------  -------------
+all               1              1              1
+run_signet        1              1              1
+total             2              1              1
+
+Select jobs to execute...
+
+[Mon May 29 20:42:48 2023]
+rule run_signet:
+    input: signet.py
+    output: dummy.txt
+    jobid: 1
+    reason: Missing output files: dummy.txt
+    resources: tmpdir=/var/folders/xw/3q796gxd02xd0xs8s_m1hdm00000gn/T
+
+Terminating processes on user request, this might take some time.
+Cancelling snakemake on user request.

@@ -1,0 +1,28 @@
+Building DAG of jobs...
+Using shell: /bin/bash
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Job stats:
+job           count    min threads    max threads
+----------  -------  -------------  -------------
+all               1              1              1
+run_signet        1              1              1
+total             2              1              1
+
+Select jobs to execute...
+
+[Mon May 29 20:53:59 2023]
+rule run_signet:
+    input: signet.py
+    output: dummy.txt
+    jobid: 1
+    reason: Missing output files: dummy.txt
+    resources: tmpdir=/var/folders/xw/3q796gxd02xd0xs8s_m1hdm00000gn/T
+
+Waiting at most 0 seconds for missing files.
+MissingOutputException in line 22 of /Users/joel/Dropbox/GITHUB_JOELBADERLAB/signet_2023/Snakefile.py:
+Job Missing files after 0 seconds. This might be due to filesystem latency. If that is the case, consider to increase the wait time with --latency-wait:
+dummy.txt completed successfully, but some output files are missing. 1
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look above for error message
+Complete log: .snakemake/log/2023-05-29T205358.824971.snakemake.log
