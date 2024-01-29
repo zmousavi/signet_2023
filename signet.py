@@ -42,14 +42,15 @@ def get_args():
     parser = argparse.ArgumentParser(description='Select genes')
     parser.add_argument('-c', '--config', help='config file',required=False, type=str, default='./signet_config.yaml')
 
-    parser.add_argument('-n', '--project_dirname', help='project name', required=False, type=str, default='TopMed')
+    parser.add_argument('-n', '--project_dirname', help='project name', required=False, type=str, default='TopMed') # default='TopMed' default='Autism'
 
-    parser.add_argument('-p', '--phenotype_list', help='phenotype list', required=False, nargs='*', default=['QT', 'HR', 'QRS', 'PR', 'JT'])
+    parser.add_argument('-p', '--phenotype_list', help='phenotype list', required=False, nargs='*', default=['QT', 'HR', 'QRS', 'PR', 'JT']) # default=['QT', 'HR', 'QRS', 'PR', 'JT'] default=['ASD']
     parser.add_argument('-k', '--k_closestgenes', help='number of closest genes',
                         required=False, type=int, default=1)
     parser.add_argument('-d', '--flankdistance', help='distance range from which to pick genes',required=False, type=int, default=250000)
     parser.add_argument('-s0', '--seed_start', help='seed0',required=False, type=int, default=0)
     parser.add_argument('-s1', '--seed_end', help='seed1',required=False, type=int, default=1)
+    parser.add_argument('--init_rand', help='randomly initialize selected network', action='store_true')  # default is False
     parser.add_argument('--nodegcor', help='degree corrected null', action='store_true')  # default is False
     parser.add_argument(
         '--plot', help='plot network', action='store_true')  # default is False
@@ -80,7 +81,6 @@ class Config():
 
 
 def write_pheno_locus_genes(filename, phenotype, pheno_locus_to_genes):
-    # logger.info('writing %s', filename)
     with open(filename, 'w') as f:
         f.write('\t'.join(['phenotype', 'locus_name', 'gene_name', 'gene_locusdist_kbp']) + '\n')
         for locus, gene_distance in pheno_locus_to_genes.items():
@@ -116,17 +116,9 @@ def write_locus_genes(filename, locus_gene_distance, locus_stats, gene_bp_dict, 
                 gene_tss = str(int(gene_bp_dict[gene]['gene_tss']))
                 gene_end = str(int(gene_bp_dict[gene]['gene_end']))
 
-
                 f.write('\t'.join([locus_chr, locus_start, locus_end, locus_width, locus, locus_ngene, phenostr, dist_str, gene, g_type, gene_tss, gene_end]) + '\n')
 
-
-
-
     return None
-
-
-
-
 
 
 
@@ -257,9 +249,7 @@ def get_locus_stats(snp_bp_dict, locus_geneset, gene_bp_dict, results_dir):
         locus_ngene = str(ngene)
 
         locus_stats[locus] = {'locus_chromosome':locus_chromosome , 'locus_start':str(locus_start), 'locus_end':str(locus_end), 'locus_width': locus_width, 'locus_ngene': locus_ngene}
-    #     df = df.append({'locus_name': locus, 'locus_chr':locus_chr , 'locus_start':locus_start, 'locus_end':locus_end, 'locus_width': locus_width, 'locus_ngene': locus_ngene}, ignore_index = True)
-    # filename = os.path.join(results_dir, 'locus_stats.csv')
-    # df.to_csv(filename, index=False, header=True)
+
     return locus_stats
 
 def write_loci_aggregatedstats(results_dir, locus_stats):
@@ -284,17 +274,6 @@ def write_loci_aggregatedstats(results_dir, locus_stats):
     df = pd.DataFrame([loci_stats])
     filename = os.path.join(results_dir, 'loci_aggregatedstats.csv')
     df.to_csv(filename, index=True, header=True)
-
-
-
-    # with open(results_dir + '/locus_width.pickle', 'wb') as handle:
-    #     pickle.dump(locuswidth_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # locus_df = pd.DataFrame.from_dict([locuswidth_dict])
-    # locus_filename = os.path.join(results_dir, 'locus_width.csv')
-    # locus_df.T.to_csv(locus_filename, index = True, header=True)
-
-
     return None
 
 
@@ -339,6 +318,8 @@ def initialize_activeset_special(locus_geneset, gene_special,  gene_distance, re
     return(locus_activeset)
 
 
+
+
 def feature_scorelist_update(feature_scorelist, locus_geneset, locus_activeset, gene_special, gene_distance,  universe_specialcounts):
     active_specialcounts = get_specialcounts(locus_activeset, gene_special )
     ngenes = len(get_networkgenes(locus_geneset))
@@ -353,12 +334,12 @@ def feature_scorelist_update(feature_scorelist, locus_geneset, locus_activeset, 
         score = math.log(num/den)
         feature_scorelist[feature].append(score)
 
-    active_distances = get_active_distance(locus_activeset, gene_distance) + 1
-    inactive_distances = get_inactive_distance(locus_geneset, locus_activeset, gene_distance) + 1
-    res = optimize.fsolve(distance_func, x0=1, args=(active_distances[:, None])) # The argument to the function is an array itself, so we need to introduce extra dimensions for dist.
-    feature_scorelist['distfac_active'].append(res[0])
-    res = optimize.fsolve(distance_func, x0=1, args=(inactive_distances[:, None])) #
-    feature_scorelist['distfac_inactive'].append(res[0])
+    active_distances = get_active_distance(locus_activeset, gene_distance)
+    active_distances = [ abs(x) for x in active_distances ]
+
+
+    res_active = sum(active_distances) / len(active_distances)
+    feature_scorelist['distfac_active'].append(res_active)
 
     return feature_scorelist
 
@@ -371,6 +352,21 @@ def get_distancescore_cauchy(distance, feature_scorelist):
     return(ret)
 
 
+def get_distancescore_noinactive_old(distance, feature_scorelist):
+    a = feature_scorelist['distfac_active'][-1]
+
+    ret =  1 / ((distance * distance) + (a * a))
+    ret = np.log(ret)
+    return(ret)
+
+
+def get_distancescore_noinactive(distance, feature_scorelist):
+    a = feature_scorelist['distfac_active'][-1]
+    ret = - np.log(2*a) - abs(distance) * (1./a)
+
+    return (ret)
+
+
 def get_specialscore(gene_functions, feature_scorelist):
     score = 0
     for function in gene_functions:
@@ -378,16 +374,6 @@ def get_specialscore(gene_functions, feature_scorelist):
     ret = score
     return(ret)
 
-
-def get_BIC_score(cnt, nullcnt, ONESIDED=True):
-    x = float(cnt)
-    y = float(nullcnt)
-    ret = y
-    if (x > 0.):
-        ret = x * math.log(x / y) - (x - y)
-    if ONESIDED and (x < y):
-        ret = -1 * np.abs(ret)
-    return ret
 
 def bayesscore_poisson(e, total, lambdazero):
     ret = gammaln(e + 1.0) - (e * math.log(lambdazero)) + lambdazero
@@ -483,7 +469,6 @@ def get_ppi_score_within(activeset, network_ppi, degfac_ppi):
 
     ret = (myscore, myscorefb, etot, e0)
     PPISCORE_MEMORY[mykey] = ret
-    # logger.info(f'*** new ppi configuration number {len(PPISCORE_MEMORY)} {myscorefb} {etot} {e0} ***')
     return(PPISCORE_MEMORY[mykey])
 
 TFSCORE_MEMORY = dict()
@@ -493,11 +478,9 @@ def get_tf_score_within(activeset, network_gri, network_gri_rev, degfac_gri, deg
     targetset = set(network_gri_rev.keys())
     griset = tfset.union(targetset)
     vset = activeset.intersection(griset)
-    #logger.info(f'activeset {len(activeset)}, griset {len(griset)}, vset {len(vset)}')
     
     mykey = tuple(sorted(vset))
     if mykey in TFSCORE_MEMORY:
-        #logger.info(f'... returning cached tfscore, {len(TFSCORE_MEMORY)} configurations seen')
         return(TFSCORE_MEMORY[mykey])
 
     # each edge has a direction
@@ -535,8 +518,6 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
                          degfac_ppi, network_gri, network_gri_rev, degfac_gri, degfac_gri_rev):
 
     # get the score for each gene
-    #logger.info(f'getting gene scores for locus {locus}, logging to {scores_logfile}')
-
     fp = open(scores_logfile, 'a')
 
     # active genes at all the other loci
@@ -554,20 +535,17 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
     
     for gene in sorted(locus_geneset[locus]):
 
-        #logger.info(f'working on locus {locus} gene {gene} ...')
         currentset = other_activegenes.union({ gene })
-        #logger.info(f'... {len(currentset)} genes in current set')
 
-        score_distance = get_distancescore_cauchy(gene_distance[gene], feature_scorelist)
+        score_distance = get_distancescore_noinactive(gene_distance[gene], feature_scorelist)
+
         dist_str = str(float(gene_distance[gene]) / 1000.0)
         # the way to initialize gene_special is as an empty set
         score_special = 0
         for feature in gene_special[gene]:
             score_special += feature_scorelist[feature][-1]
 
-        #logger.info(f'... getting ppi score')
         (ppi_score, ppi_score_fb, ppi_etot, ppi_e0) = get_ppi_score_within(currentset, network_ppi, degfac_ppi)
-        #logger.info(f'... ... ppi score {ppi_score} fb {ppi_score_fb} etot {ppi_etot} e0 {ppi_e0}')
         score_ppi = ppi_score_fb
 
         edges_gene_to_others = int(0)  # for printing in output file
@@ -584,13 +562,6 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
             ppi_connected_genes = network_ppi[gene].intersection(currentset)
         edges_gene_to_others = len(ppi_connected_genes)
 
-        # degree_correction:
-        #D1, D2 = utils_ppi.get_D_other(other_activegenes, gene_PPIdegree)
-        #x_gene = utils_ppi.get_lambda_gene(
-        #    gene, gene_PPIdegree, D1, D2, ppi_Ksquared)
-        #score_ppi_degcor = get_poisson_score(other_edges + edges_gene_to_others, totalpair, x_gene)
-        #logger.info(f'... ... score_ppi_degcor {score_ppi_degcor} etot {other_edges + edges_gene_to_others} e0 {x_gene}')
-
         ppi_toks = []
         for g in sorted(ppi_connected_genes):
             specialstr = ''
@@ -599,7 +570,6 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
             ppi_toks.append(g + specialstr)
         ppi_connected_genes_str = ';'.join(ppi_toks)
 
-        #score_ppi = score_ppi_degcor
 
         # Transcription Factor
         score_TF = 0.0
@@ -610,7 +580,6 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
         other_TFedges = utils_ppi.count_directed_within_set(other_activegenes, TFsource_target)
         outconnected_genes = set()
         inconnected_genes = set()
-        #TFedges_gene_to_others = 0
         if gene in TFsource_target:
             outconnected_genes = TFsource_target[gene].intersection(other_activegenes)
         if gene in reverse_TF:
@@ -626,8 +595,6 @@ def get_locus_genescores(locus, locus_activeset, locus_geneset,  locus_score, lo
                                                                            network_gri, network_gri_rev,
                                                                            degfac_gri, degfac_gri_rev)
         score_TF = tf_score_fb
-        #edges_tot_TF = other_TFedges + TFedges_gene_to_others
-        #logger.info(f'old {score_TF} new {tf_score_fb} {tf_score_pois} edges {edges_tot_TF} {tf_etot} e0 {TFx_gene} {tf_e0}')
 
         TF_outdegree_str = '0'
         TF_out_active_cnt = '0'
@@ -692,11 +659,9 @@ def onelocus(locus, locus_activeset, locus_nchange, locus_activelist_series, loc
     bestgenes = set()
     for score, gene in recs:
         ###the AND condition is to avoid selecting a gene that is in neither category.
-        if score == bestscore: ####and (gene_special[gene] or gene in network_ppi or gene in TFsource_target or gene in reverse_TF or gene in locus_mindsistgeneset[locus]):
+        if score == bestscore:
             bestgenes.add(gene)
-    ### if not bestgenes: ####if the highest scoring gene has no special feature nor is an interaction gene, set the locus candidate gene to
-    ###     mindist_geneset = locus_mindsistgeneset[locus]
-    ###     bestgenes = bestgenes.union(mindist_geneset)
+
 
     candidate_bestgene = random.choice(sorted(bestgenes)) # sorted so randomness is reproducable!
 
@@ -775,7 +740,7 @@ def write_scorebreakdown(locus, candidate_bestgene, scores_logfile, network_ppi,
 def get_active_distance(locus_activeset, gene_distance):
         dist = []
         for locus in locus_activeset:
-            if locus.startswith('loc'):  ####APRIL2023
+            if locus.startswith('loc'):
                 continue
             for gene in locus_activeset[locus]: #only one gene but this is a set
                 break
@@ -786,7 +751,7 @@ def get_active_distance(locus_activeset, gene_distance):
 def get_inactive_distance(locus_geneset, locus_activeset, gene_distance):
         dist = []
         for locus in locus_geneset: #assume two final genes with same scores have same distance
-            if locus.startswith('loc'):  ####APRIL2023
+            if locus.startswith('loc'):
                 continue
             for active_gene in locus_activeset[locus]: #only one gene but this is a set
                 break
@@ -800,9 +765,9 @@ def get_inactive_distance(locus_geneset, locus_activeset, gene_distance):
         distances = np.array(dist)
         return distances
 
-def distance_func(x, distances):
-    n = len(distances)
-    return (1/(x**2)) - (2/n)*np.sum(1/(x**2 + distances**2))  # only one real root at x = 1
+# def distance_func(x, distances):
+#     n = len(distances)
+#     return (1/(x**2)) - (2/n)*np.sum(1/(x**2 + distances**2))  # only one real root at x = 1
 
 def onepass(locus_activeset, locus_activelist_series, locus_geneset, locus_score,
             locus_nchange, pass_locus_change, locus_mindsistgeneset, gene_distance,
@@ -821,8 +786,6 @@ def onepass(locus_activeset, locus_activelist_series, locus_geneset, locus_score
     fp.close()
 
     for locus in locuslist_randomorder:
-
-        #logger.info('locus %s', locus)
 
         onelocus(locus, locus_activeset, locus_nchange, locus_activelist_series, locus_geneset,  locus_score,
                  locus_mindsistgeneset, locus_snptype, gene_distance, gene_special, gene_type,  feature_scorelist,
@@ -853,7 +816,7 @@ def get_specialcounts(network_dict, gene_special ):
     for f in FEATURE_LIST:
         special_counts[f] = 0
     for locus in network_dict:
-        if locus.startswith('loc'):  ####APRIL2023
+        if locus.startswith('loc'):
             continue
         for gene in network_dict[locus]:
             for special in gene_special[gene]:
@@ -866,8 +829,6 @@ def write_extended_finaldf(scores_logfile, seed, degree_correction, optim_run, r
     df = pd.read_csv(scores_logfile, delimiter='\t')
     final_df = pd.DataFrame(columns = df.columns)
 
-    #final_df['hiscore_gene'] = False
-    #final_df['hippi_gene']=False
     final_df['exp_score'] = 0
 
     for locus in df['locus_name'].unique():
@@ -906,13 +867,13 @@ def write_extended_finaldf(scores_logfile, seed, degree_correction, optim_run, r
             #logger.warning(f'*** the final_df.append statement seems to cause an error with pandas')
             #final_df = final_df.append(locus_df.loc[[idx]], ignore_index=True)
             final_df = pd.concat([final_df, locus_df.loc[[idx]]])
-            #pdb.set_trace()
-            #logger.warning(f'*** past final_df.append')
+
 
     # write the new df:
     file = os.path.join(results_dir, base_filename + '_extended_finalpass_scores.txt')
     logger.info(f'writing {file}')
     final_df.to_csv(file, sep='\t')
+
 
     return  final_df
 
@@ -938,7 +899,7 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
                    gene_special, locus_mindsistgeneset, gene_distance, gene_signeddistance,
                    gene_type, locus_snptype, external_genes, seed, results_dir, seedless_base_filename,
                    counts_log, unannotated, pseudogene, antisense, feature_initscore_file,
-                   degfac_ppi, network_gri, network_gri_rev, degfac_gri, degfac_gri_rev):
+                   degfac_ppi, network_gri, network_gri_rev, degfac_gri, degfac_gri_rev, init_rand):
     random.seed(seed)
     logger.info(f'*** starting with seed {seed} ***')
 
@@ -969,8 +930,11 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
     universe_specialcounts = get_specialcounts(locus_geneset, gene_special )
     logger.info(f'universe specialcounts {universe_specialcounts}')
 
-    #locus_activeset = initialize_activeset_random(locus_geneset, gene_distance, results_dir)
-    locus_activeset = initialize_activeset_special(locus_geneset, gene_special,  gene_distance, results_dir, FEATURE_LIST)
+    if init_rand:
+        locus_activeset = initialize_activeset_random(locus_geneset, gene_distance, results_dir)
+    if not init_rand:
+        locus_activeset = initialize_activeset_special(locus_geneset, gene_special,  gene_distance, results_dir, FEATURE_LIST)
+
     init_activeset = copy.deepcopy(locus_activeset)
 
     logger.info('... done initializing active set')
@@ -1014,6 +978,8 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
     for locus in locus_activeset:
         for gene in locus_activeset[locus]:
 
+            logger.info(f'... starting gene {gene} and locus {locus} getting score (of initalized activeset)')
+
             # usually the first arguments to get_locus_scores are locus, locus_activeset, locus_geneset
             # here the locus_geneset is replaced by locus_activeset
             #    to restrict the calculation to just the active gene at each locus
@@ -1034,7 +1000,6 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
 
     networkscore_list.append(networkscore)
 
-    # score_logfile_fp = open(scores_logfile, 'w')
 
     for pass_number in range(npass):
 
@@ -1053,7 +1018,6 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
             utils_plot.plot_network(len(pass_locus_change), results_dir, locus_activeset,
                          network_ppi, phenotype_list, gene_phenoset, gene_special, degree_correction, TFsource_target)
 
-        # logger.info(f'... finished seed {seed} pass {pass_number + 1}')
         assert len(locus_score) == len(locus_geneset), 'uh-oh locus_score has more/less loci than locus_geneset'
 
         # calculate network score of this pass
@@ -1080,7 +1044,6 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
 
         networkscore_list.append(networkscore)
 
-        # pdb.set_trace()
 
         for locus in locus_activeset:
             for g in locus_activeset[locus]:
@@ -1116,15 +1079,6 @@ def run_experiment(phenotype_list, k, FLANKDIST, degree_correction, optim_run, n
         if ((maxdiff <= CONVERGENCE and max_paramdiff <= CONVERGENCE)  or (nchanges == 0)  ):
             logger.info(f'... seed {seed} finished after pass {pass_number + 1}')
             converged = True
-
-            if (network_plot and (pass_number % 10)):
-                utils_plot.plot_network(len(pass_locus_change), results_dir, locus_activeset, network_ppi,
-                             phenotype_list, gene_phenoset, gene_special, degree_correction, TFsource_target)
-
-                utils_plot.plot_ppinetwork(len(pass_locus_change), results_dir, locus_activeset, network_ppi,
-                             phenotype_list, gene_phenoset, gene_special, degree_correction, TFsource_target)
-
-                utils_plot.plot_ppitriangles(len(pass_locus_change), results_dir, locus_activeset, network_ppi, phenotype_list, gene_phenoset, gene_special, degree_correction)
 
             break
 
@@ -1317,6 +1271,8 @@ def main():
     pseudogene = args.pseudogene
     antisense = not args.no_antisense
     network_plot = args.plot
+    init_rand = args.init_rand
+
 
     config = Config(args.config)
 
@@ -1340,11 +1296,14 @@ def main():
     phenostr = '+'.join(phenotype_list)
     flankstr = str(int( int(FLANKDIST) / 1000)) + 'kb'
     
-    results_dir = os.path.join(results_dir, '_'.join([project_dirname, phenostr, flankstr]))
+    initstr = 'initrand' + str(init_rand)
+    results_dir = os.path.join(results_dir, '_'.join([project_dirname, phenostr, flankstr, initstr, 'NOinactivedist_exp']))
+
 
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     logger.info(f'results directory{results_dir}')
+
 
     project_datadir = os.path.join(data_dir, project_dirname)
     snploc_file = os.path.join(project_datadir, snploc_filename)
@@ -1416,10 +1375,7 @@ def main():
     # for network genes, get distance to closest snp and the closest snp
     gene_distance = get_gene_distance(snp_gene_distance)
     gene_signeddistance = get_gene_signeddistance(snp_gene_signeddist)
-    logger.warning('signed distances is probably incorrect, should take strand into account')
 
-    # snp_filename = os.path.join(results_dir, 'snp_to_genes.txt')
-    # write_snp_genes(snp_filename, snp_gene_distance, gene_phenoset, snp_bp_dict)
 
     for gene in gene_distance:
         assert gene_distance[gene] == abs(gene_signeddistance[gene])
@@ -1441,6 +1397,8 @@ def main():
     for ph in phenotype_list:
         pheno_snp_gene_distance = utils_data.get_network(k, FLANKDIST, GENE_BP_DICT,
                                                          ph, project_datadir, snploc_filename)
+
+
         locus_genes_distances = utils_data.merge_pheno_snps(pheno_snp_gene_distance)
 
         pheno_locus_gene_distance[ph] = defaultdict(dict)
@@ -1472,8 +1430,7 @@ def main():
 
     logger.info(f'{len(nw_missedgenes)} missed genes: {nw_missedgenes}')
     logger.info(f'missed special: {nw_missedgenes_special}')
-    # print(nw_missedgenes)
-    # print(nw_missedgenes_special)
+
 
     logger.info(f'before adding missing genes, {len(gene_distance)} genes and {len(union_locus_geneset)} loci')
     for gene in nw_missedgenes:
@@ -1491,9 +1448,9 @@ def main():
             union_locus_geneset[locus_name] = {gene}
             union_locus_gene_distance[locus_name][gene] = locus_loc
             gene_type[gene] = list(gene_special[gene])[0]
-            #assert not(set(gene_special.keys()) - set(gene_distance.keys()))
 
     logger.info(f'after adding missing genes, {len(gene_distance)} genes and {len(union_locus_geneset)} loci')
+
 
     locus_to_genes = utils_data.merge_loci(union_locus_geneset, union_locus_gene_distance)
 
@@ -1539,8 +1496,7 @@ def main():
     logger.info(f'{len(gene_locus)} genes in gene_locus')
     logger.info(f'{len(mindist_genes)} mindist genes')
             
-# a bad idea to regenerate snp_bp_dict
-# it was already created to generate the loci
+
     snp_bp_dict = defaultdict(dict)
     for phenotype in phenotype_list:
         SNPfile =  os.path.join(project_datadir, phenotype + snploc_filename)
@@ -1771,15 +1727,21 @@ def main():
                        gene_type, locus_snptype, external_genes, seed,
                        results_dir, seedless_base_filename, counts_log,
                        unannotated, pseudogene, antisense, feature_initscore_file,
-                       degfac_ppi, network_gri, network_gri_rev, degfac_gri, degfac_gri_rev)
+                       degfac_ppi, network_gri, network_gri_rev, degfac_gri, degfac_gri_rev, init_rand)
 
         logger.info(f'... finished seed {seed}')
 
         
         counts_df = pd.read_csv(allruns_countlog, sep='\t')
         file = os.path.join(results_dir, base_filename + '_extended_finalpass_scores.txt')
+
+
+
+
         pass_df = pd.read_csv(file, sep='\t')
         loci = counts_df['locus_name']
+
+
 
         gene_selection_list = []
         for locus in np.unique(loci):
@@ -1788,10 +1750,11 @@ def main():
             gene_selection = selectedgene_row.astype(int).values.tolist()
             gene_selection_list.extend(gene_selection)
 
+
+
         counts_df[str(seed)] = gene_selection_list
         counts_df.to_csv(allruns_countlog, index=False, sep='\t')
 
-        #pdb.set_trace()
 
     #finished seed_end iterations
     #calculate prob_selected
@@ -1804,7 +1767,6 @@ def main():
     counts_filename = os.path.join(results_dir, seedless_base_filename + '_counts_allruns_prob.txt')
     counts_df.to_csv(counts_filename, index=False, sep='\t')
 
-    # pdb.set_trace()
 
     logger.info(f'*** concluded successfully ***')
 

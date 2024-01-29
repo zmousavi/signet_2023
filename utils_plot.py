@@ -123,6 +123,7 @@ def plot_InteractionNetwork_oup(anchor_gene, results_dir, summary_filename,  net
     logger.info('plotting network')
 
 
+
     TFtarget_source = utils_ppi.reverse_network(TFsource_target)
 
     summary_file = os.path.join(results_dir, summary_filename)
@@ -160,6 +161,8 @@ def plot_InteractionNetwork_oup(anchor_gene, results_dir, summary_filename,  net
     for level in [1, 2, 3]:
         graphresults_dir = results_dir + '/network_plots'
         graph_name = os.path.join(graphresults_dir, anchor_gene + '_level' +str(level))
+        graph_name = os.path.join(graphresults_dir, anchor_gene + 'colored_level' +str(level))
+
 
         if level == 1:
             neighbors = firstlevel_neighbors
@@ -168,8 +171,9 @@ def plot_InteractionNetwork_oup(anchor_gene, results_dir, summary_filename,  net
         if level == 3:
             neighbors = secondlevel_neighbors.union(thirdlevel_neighbors)
 
-        G=gv.Digraph(graph_name, filename = graph_name,
-                       engine = 'fdp', strict = True)  # 'neato' format='png'
+        # G=gv.Digraph(graph_name, filename = graph_name,
+        #                engine = 'fdp', strict = True)  # 'neato', 'circo', 'twopi' format='png'
+        G=gv.Digraph(graph_name, filename = graph_name, engine= 'fdp', strict = True)  # 'neato' format='png'
         G.attr(bgcolor = 'white')
 
         for gene in neighbors:
@@ -194,8 +198,17 @@ def plot_InteractionNetwork_oup(anchor_gene, results_dir, summary_filename,  net
         G.attr('node', fixedsize = 'true')
         for gene in anchor_interesting_geneset:
             color='lightgray'
+        #if 1: #make special anchor genes colored
+            special=gene_special[gene]
+            if 'omim' in special:
+                color='pink'
+            elif ('exome' in special or 'lof' in special):
+                color='orange'
+            elif 'coloc' in special:
+                color='lightyellow'
             if gene == anchor_gene:
                 color='lightgreen'
+
             G.node(gene, style = 'filled', fillcolor = color, shape = 'rectangle',
                    width = '0.6',  height = '0.2', fontsize = '8')
 

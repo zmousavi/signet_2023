@@ -42,6 +42,9 @@ def get_args():
                         required=False, type=int, default=0)
     parser.add_argument('-s1', '--seed_end', help='seed1',
                         required=False, type=int, default=1)
+    parser.add_argument('--init_rand', help='randomly initialize selected network',
+                        action='store_true')  # default is False
+
     parser.add_argument('--nodegcor', help='degree corrected null',
                         action='store_true')  # default is False
     parser.add_argument(
@@ -96,6 +99,7 @@ pseudogene = args.pseudogene
 antisense = not args.no_antisense
 network_plot = args.plot
 prob_threshold = args.prob_threshold
+init_rand = args.init_rand
 
 config = Config(args.config)
 
@@ -126,8 +130,11 @@ project_dirname = project_dirname
 phenostr = '+'.join(phenotype_list)
 flankstr = str(int(int(FLANKDIST) / 1000)) + 'kb'
 
+
+initstr = 'initrand' + str(init_rand)
 results_dir = os.path.join(results_dir, '_'.join(
-    [project_dirname, phenostr, flankstr]))
+    [project_dirname, phenostr, flankstr, initstr, 'NOinactivedist_exp']))
+
 
 project_datadir = os.path.join(data_dir, project_dirname)
 snploc_file = os.path.join(project_datadir, snploc_filename)
@@ -139,40 +146,15 @@ feature_initscore_file = os.path.join(
 seedless_base_filename = 'SIGNET'
 
 
-def write_closestgene_to_snp(results_dir):
-    snp_to_genes_filename = os.path.join(results_dir, 'snp_to_genes.txt')
-    df = pd.read_csv(snp_to_genes_filename, sep='\t', dtype=str)
-
-    gene_mindistsnp = defaultdict(set)
-    for idx, row in df.iterrows():
-        gene = row['snp_mindistgene']
-
-        if gene in gene_mindistsnp:
-            gene_mindistsnp[gene].add(row['snp_name'])
-        else:
-            gene_mindistsnp[gene] = {row['snp_name']}
-
-    for key, value in gene_mindistsnp.items():
-        gene_mindistsnp[key] = '+'.join(sorted(value))
-
-    gene_mindistsnp_df = pd.DataFrame([gene_mindistsnp]).T
-    gene_mindistsnp_df.reset_index(inplace=True)
-    gene_mindistsnp_df = gene_mindistsnp_df.rename(
-        columns={'index': 'gene_name', 0: 'snp_mindistgene'})
-
-    gene_mindistsnp_filename = os.path.join(
-        results_dir, 'gene_snpmindist_gene.txt')
-    gene_mindistsnp_df.to_csv(
-        gene_mindistsnp_filename, index=False, sep='\t')
-
-
-def write_finalnetworkscores(results_dir, seed_start=0, seed_end=100):
+def write_finalnetworkscores(results_dir, seed_start=0, seed_end=seed_end):
     df = pd.DataFrame(columns=['seed', 'finalnetworkscore'])
 
     for seed in range(seed_start, seed_end):
         base_filename = f'seed{seed:02d}'
+
         file = os.path.join(results_dir, base_filename +
                             '_networkscore_log.txt')
+
         seed_df = pd.read_csv(file, delimiter='\t')
         seed = seed_df['seed'].values[-1]
         # [-1] to only consider final value
@@ -192,13 +174,12 @@ def write_finalnetworkscores(results_dir, seed_start=0, seed_end=100):
     return maxnetworkscore_seed
 
 
-def write_aggregated_statsfiles(seedless_base_filename, results_dir, seed_start=0, seed_end=100):
+def write_aggregated_statsfiles(seedless_base_filename, results_dir, seed_start=0, seed_end=seed_end):
 
     maxnetworkscore_seed = write_finalnetworkscores(
         results_dir, seed_start=seed_start, seed_end=seed_end)
 
     print(' seed %s has maxnetwork score' % maxnetworkscore_seed)
-    pdb.set_trace()
 
     base_filename = f'seed{maxnetworkscore_seed:02d}'
 
@@ -328,32 +309,6 @@ def write_aggregated_statsfiles(seedless_base_filename, results_dir, seed_start=
     summary_df.to_csv(summary_df_filename, index=False, sep='\t')
 
 
-def write_finalstats_selected(results_dir, prob_threshold):
-
-    filename = os.path.join(results_dir,  'summary_genestats_manuscript.txt')
-    final_prob_genestats_df = pd.read_csv(filename, sep='\t')
-    selected_df = final_prob_genestats_df.loc[final_prob_genestats_df['gene_prob_selected'] >= prob_threshold]
-    selected_df = selected_df[~selected_df['locus_name'].str.startswith('loc')]
-
-    selected_dist = selected_df['gene_locusdist_kbp'].values
-    min_selecteddist = min(selected_dist)
-    max_selecteddist = max(selected_dist)
-    median_selecteddist = np.median(selected_dist)
-
-    locus_width = selected_df['locus_width'].values
-    min_locus_width = min(locus_width)
-    max_locus_width = max(locus_width)
-    median_locus_width = np.median(locus_width)
-
-    loci_stats = {'min_selecteddist': min_selecteddist,
-                  'max_selecteddist': max_selecteddist, 'median_selecteddist': median_selecteddist, 'min_locus_width': min_locus_width, 'max_locus_width': max_locus_width, 'median_locus_width': median_locus_width}
-
-    df = pd.DataFrame([loci_stats])
-    filename = os.path.join(results_dir, 'selected_dist_stats.csv')
-
-    df.to_csv(filename, index=False, header=True)
-
-
 def kegg_pathway_comparison(file1path, file1name, file2path, file2name, results_dir, seedless_base_filename):
 
     gene_pathwaysdf_file1 = pd.read_csv(file1path, sep='\t')
@@ -391,10 +346,7 @@ def kegg_pathway_comparison(file1path, file1name, file2path, file2name, results_
 
 def write_feature_weight_dict(results_dir):
     feature_weights = defaultdict(list)
-    # if project_dirname == 'TopMed':
-    feature_list = ['distfac_active',
-                    'distfac_inactive', 'omim', 'exome', 'coloc']
-
+    feature_list = ['distfac_active', 'omim', 'exome', 'coloc']
     feature_finalvalues_df = pd.DataFrame()
 
     for feature in feature_list:
@@ -408,6 +360,8 @@ def write_feature_weight_dict(results_dir):
 
     file = os.path.join(
         results_dir, 'features_weights.txt')
+
+    pdb.set_trace()
     feature_finalvalues_df.to_csv(file, index=False, sep='\t')
 
     for feature in feature_list:
@@ -425,13 +379,110 @@ def write_feature_weight_dict(results_dir):
     feature_summary_df.to_csv(file, index=False, sep='\t')
 
 
+def write_feature_weight_dict_init(results_dir):
+    #(used for init_rand)
+    feature_weights = defaultdict(list)
+    feature_list = ['distfac_active', 'omim', 'exome', 'coloc']
+    feature_finalvalues_df = pd.DataFrame()
+
+    for feature in feature_list:
+        feature_weights[feature] = []
+        for file in glob.glob(results_dir + '/seed*' + feature + '_log.txt'):
+            df = pd.read_csv(file, delimiter='\t')
+            # ADDED the [0] to only consider init value
+            feature_weights[feature].append(df[feature].values[0])
+
+        feature_finalvalues_df[feature] = feature_weights[feature]
+
+    file = os.path.join(
+        results_dir, 'features_weights_init.txt')
+    feature_finalvalues_df.to_csv(file, index=False, sep='\t')
+
+    for feature in feature_list:
+        print('feature: ', feature, 'mean: ', np.mean(
+            feature_weights[feature]), 'std: ', np.std(feature_weights[feature]))
+
+    feature_summary_df = pd.DataFrame(columns=['feature', 'mean', 'std'])
+
+    for feature in feature_list:
+        df = {'feature': feature, 'mean': np.mean(
+            feature_weights[feature]), 'std': np.std(feature_weights[feature])}
+        feature_summary_df = feature_summary_df.append(df, ignore_index=True)
+
+    file = os.path.join(results_dir, 'features_weights_init_summary.txt')
+    feature_summary_df.to_csv(file, index=False, sep='\t')
+
+
+def count_npass(results_dir):
+    feature = 'distfac_active'
+    npass_list = []
+    for file in glob.glob(results_dir + '/seed*' + feature + '_log.txt'):
+        df = pd.read_csv(file, delimiter='\t')
+        npass_list.append(len(df))
+
+
+def write_finalstats_selected(results_dir, prob_threshold):
+
+    filename = os.path.join(results_dir,  'summary_genestats_manuscript.txt')
+    final_prob_genestats_df = pd.read_csv(filename, sep='\t')
+    selected_df = final_prob_genestats_df.loc[final_prob_genestats_df['gene_prob_selected'] >= prob_threshold]
+    selected_df = selected_df[~selected_df['locus_name'].str.startswith('loc')]
+
+    selected_dist = selected_df['gene_locusdist_kbp'].values
+    min_selecteddist = min(selected_dist)
+    max_selecteddist = max(selected_dist)
+    median_selecteddist = np.median(selected_dist)
+
+    locus_width = selected_df['locus_width'].values
+    min_locus_width = min(locus_width)
+    max_locus_width = max(locus_width)
+    median_locus_width = np.median(locus_width)
+
+    loci_stats = {'min_selecteddist': min_selecteddist,
+                  'max_selecteddist': max_selecteddist, 'median_selecteddist': median_selecteddist, 'min_locus_width': min_locus_width, 'max_locus_width': max_locus_width, 'median_locus_width': median_locus_width}
+
+    df = pd.DataFrame([loci_stats])
+    filename = os.path.join(results_dir, 'selected_dist_stats.csv')
+
+    df.to_csv(filename, index=False, header=True)
+
+
+def write_closestgene_to_snp(results_dir):
+    snp_to_genes_filename = os.path.join(results_dir, 'snp_to_genes.txt')
+    df = pd.read_csv(snp_to_genes_filename, sep='\t', dtype=str)
+
+    gene_mindistsnp = defaultdict(set)
+    for idx, row in df.iterrows():
+        gene = row['snp_mindistgene']
+
+        if gene in gene_mindistsnp:
+            gene_mindistsnp[gene].add(row['snp_name'])
+        else:
+            gene_mindistsnp[gene] = {row['snp_name']}
+
+    for key, value in gene_mindistsnp.items():
+        gene_mindistsnp[key] = '+'.join(sorted(value))
+
+    gene_mindistsnp_df = pd.DataFrame([gene_mindistsnp]).T
+    gene_mindistsnp_df.reset_index(inplace=True)
+    gene_mindistsnp_df = gene_mindistsnp_df.rename(
+        columns={'index': 'gene_name', 0: 'snp_mindistgene'})
+
+    gene_mindistsnp_filename = os.path.join(
+        results_dir, 'gene_snpmindist_gene.txt')
+    gene_mindistsnp_df.to_csv(
+        gene_mindistsnp_filename, index=False, sep='\t')
+
+
 if 1:
-    write_finalnetworkscores(results_dir, seed_end=1)
+    #summary result file
+    write_finalnetworkscores(results_dir, seed_end=seed_end)
     write_aggregated_statsfiles(
-        seedless_base_filename, results_dir, seed_end=1)
+        seedless_base_filename, results_dir, seed_end=seed_end)
 
 
 if 0:
+    #network plots
     with open(results_dir + '/TFsource_target.pickle', 'rb') as handle:
         TFsource_target = pickle.load(handle)
 
@@ -451,15 +502,17 @@ if 0:
         utils_plot.plot_InteractionNetwork_oup(
             anchor_gene, results_dir, summary_filename, network_ppi, gene_special, TFsource_target)
 
+
 if 0:
+    #feature weights
     write_feature_weight_dict(results_dir)
 
-
 if 0:
+    #pathway analysis
     file1path = os.path.join(results_dir, 'KEGG_2021_signet.txt')
     file2path = os.path.join(results_dir,  'KEGG_2021_mindist.txt')
     file3path = os.path.join(results_dir,  'KEGG_2021_signetplus.txt')
-    file1name = 'selected'
+    file1name = 'signet'
     file2name = 'mindist'
     file3name = 'signetplus'
     kegg_pathway_comparison(file1path, file1name, file2path,

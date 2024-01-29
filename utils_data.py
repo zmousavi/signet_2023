@@ -150,13 +150,16 @@ def gene_synonym(gene_file, unannotated, pseudogene, antisense, project_datadir,
 
     return(ret)
 
+
 READ_SNP_FILE_CACHE = dict()
+
+
 def read_snp_file(file, delimiter='\t'):
 
     if file in READ_SNP_FILE_CACHE:
         logger.info(f'returning cached version of {file}')
         return(READ_SNP_FILE_CACHE[file])
-    
+
     fp = open(file, 'r')
     ret = defaultdict(dict)
 
@@ -292,9 +295,11 @@ def get_network(k, FLANKDIST, gene_bp_dict, phenotype, data_dir, snploc_filename
         cnt = uniq_genes[g]
         gene_hist[cnt] = gene_hist.get(cnt, 0) + 1
 
-    logger.info(f'phenotype {phenotype}: {len(phen_dict)} variants, {len(uniq_genes)} genes, {str(gene_hist)}')
+    logger.info(
+        f'phenotype {phenotype}: {len(phen_dict)} variants, {len(uniq_genes)} genes, {str(gene_hist)}')
 
     return phen_dict
+
 
 def get_feature_geneset(datadir, phenotype_list, delimiter='\t', encoding=None):
     feature_geneset = defaultdict(set)
@@ -364,6 +369,57 @@ def get_gene_featureset(gene_distance, feature_geneset):
     return (gene_featureset)
 
 
+def get_gene_featureset_onespecialblocked(gene_distance, feature_geneset, blockedspecialgene):
+    gene_featureset = defaultdict(set)
+
+    for feature in feature_geneset:
+        for gene in feature_geneset[feature]:
+            gene_featureset[gene].add(feature)
+
+    for gene in gene_distance:
+        if gene not in gene_featureset:
+            gene_featureset[gene] = set()
+
+    gene_featureset[blockedspecialgene] = set()
+    return (gene_featureset)
+
+
+def independent_snps_exclude_genes(independent_snps, snp_gene_distance):
+    #independent_snps = {'rs10040989', 'rs1468333'}
+    # for snp in sorted(independent_snps):
+    #     print(snp)
+    #     print(sorted(snp_gene_distance[snp].items()))
+
+    gene_indsnp_distance = defaultdict(dict)
+    for snp in sorted(independent_snps):
+
+        for gene in sorted(snp_gene_distance[snp]):
+            if gene not in gene_indsnp_distance:
+                gene_indsnp_distance[gene]['snp'] = snp
+                gene_indsnp_distance[gene]['dist'] = snp_gene_distance[snp][gene]
+
+            else:
+
+                registered_distance = gene_indsnp_distance[gene]['dist']
+                current_snp_distance = snp_gene_distance[snp][gene]
+
+                if current_snp_distance < registered_distance:
+                    registered_snp = gene_indsnp_distance[gene]['snp']
+                    del(snp_gene_distance[registered_snp][gene])
+                    gene_indsnp_distance[gene]['snp'] = snp
+                    gene_indsnp_distance[gene]['dist'] = snp_gene_distance[snp][gene]
+                else:
+                    del(snp_gene_distance[snp][gene])
+
+    # # print(gene_indsnp_distance)
+    # for snp in sorted(independent_snps):
+    #     print(snp)
+    #     print(sorted(snp_gene_distance[snp].items()))
+    # pdb.set_trace()
+
+    return snp_gene_distance
+
+
 def merge_pheno_snps(snp_to_genes):
     # snp_to_genes is a dictionary, key = snp, value = list of genes
     # output should be similar, but merging SNPs whose genes overlap
@@ -421,19 +477,21 @@ def merge_loci(union_locus_geneset, union_locus_gene_distance):
 
     locus_to_genes = defaultdict(list)  # genes as a list
     gene_to_locus = dict()  # gene points to a single locus
+
     for locus in union_locus_geneset:
         genes = union_locus_geneset[locus]
         # figure out if any of the genes is already in a locus
         merge = dict()
         for g in genes:
             if g in gene_to_locus:
-                merge[gene_to_locus[g][0]] = True
+                merge[gene_to_locus[g][0]] = True  # merge: locus: True
 
         if not merge:
             for g in genes:
                 d = abs(union_locus_gene_distance[locus][g])
                 gene_to_locus[g] = (locus, d)
                 locus_to_genes[locus].append((g, d))
+
         else:
             all_genes_dist = dict()
             for g in genes:
@@ -442,6 +500,7 @@ def merge_loci(union_locus_geneset, union_locus_gene_distance):
                 all_genes_dist[g] = d
 
             toks = [locus]
+
             for m in merge:
                 toks = toks + m.split('+')
                 other_snp_genes = [x[0] for x in locus_to_genes[m]]
@@ -452,6 +511,7 @@ def merge_loci(union_locus_geneset, union_locus_gene_distance):
                     all_genes_dist[g] = d
                 del locus_to_genes[m]
             snpset = set()
+
             for t in toks:
                 for s in t.split('+'):
                     snpset.add(s)
@@ -464,6 +524,76 @@ def merge_loci(union_locus_geneset, union_locus_gene_distance):
                 gene_to_locus[g] = (locusname, d)
 
     return locus_to_genes
+
+
+# def merge_loci_exclude(union_locus_geneset, union_locus_gene_distance):
+
+#     locus_to_genes = defaultdict(list)  # genes as a list
+#     gene_to_locus = dict()  # gene points to a single locus
+#     independent_snps = {'rs10040989', 'rs1468333', 'rs1321311', 'rs236349'}
+
+#     pdb.set_trace()
+#     for locus in {'rs10040989', 'rs1468333'}:  # union_locus_geneset:
+#         genes = union_locus_geneset[locus]
+#         # figure out if any of the genes is already in a locus
+#         merge = dict()
+#         for g in genes:
+#             if g in gene_to_locus:
+#                 merge[gene_to_locus[g][0]] = True  # merge: locus: True
+
+#         pdb.set_trace()
+
+#         if not merge:
+#             for g in genes:
+#                 d = abs(union_locus_gene_distance[locus][g])
+#                 gene_to_locus[g] = (locus, d)
+#                 locus_to_genes[locus].append((g, d))
+
+#             pdb.set_trace()
+
+#         else:
+#             all_genes_dist = dict()
+#             for g in genes:
+
+#                 d = abs(union_locus_gene_distance[locus][g])
+#                 all_genes_dist[g] = d
+
+#             toks = [locus]
+
+#             pdb.set_trace()
+
+#             if merge.split('+').intersection(independent_snps) and locus in independent_snps: #these are independent snps/signals so do not merge but need to find which gene goes to which independent locus
+
+    #         else:
+    #             #not indepenent SNPs so merge
+    #             for m in merge:
+    #                 toks = toks + m.split('+')
+    #                 other_snp_genes = [x[0] for x in locus_to_genes[m]]
+    #                 for g in other_snp_genes:
+    #                     d = gene_to_locus[g][1]
+    #                     if g in all_genes_dist:
+    #                         d = min(all_genes_dist[g], d)
+    #                     all_genes_dist[g] = d
+    #                 del locus_to_genes[m]
+    #             snpset = set()
+
+    #             pdb.set_trace()
+    #             for t in toks:
+    #                 for s in t.split('+'):
+    #                     snpset.add(s)
+    #             locusname = '+'.join(sorted(snpset))
+    #             locus_gene_distance = [(g, d) for (g, d) in all_genes_dist.items()]
+    #             locus_to_genes[locusname] = sorted(
+    #                 locus_gene_distance, key=lambda x: x[1])
+
+    #             pdb.set_trace()
+
+    #             for g, d in all_genes_dist.items():
+    #                 gene_to_locus[g] = (locusname, d)
+
+    #             pdb.set_trace()
+
+    # return locus_to_genes
 
 
 def GWAScat_rows(phenotype_list, GWAS_dir, project_datadir):
